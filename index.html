@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Komik Populer (NekoLabs API)</title>
+    <style>
+        /* --- CSS: STYLING & ANIMATION --- */
+        :root {
+            --primary-color: #f73359; /* Warna merah muda/pink cerah */
+            --bg-color: #f8f9fa;
+            --shadow-light: rgba(0, 0, 0, 0.08);
+            --shadow-medium: rgba(0, 0, 0, 0.15);
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: var(--bg-color);
+            color: #333;
+            text-align: center;
+        }
+
+        /* HEADING */
+        .header-container {
+            max-width: 1200px;
+            margin: 0 auto 30px;
+            padding: 10px 0;
+        }
+        
+        h1 {
+            color: var(--primary-color);
+            margin-bottom: 10px;
+            font-size: 2.2em;
+        }
+
+        /* LOADING SPINNER */
+        #loading-spinner {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1000;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* GRID CONTAINER (4 Kolom di desktop) */
+        #gallery-container {
+            display: grid;
+            /* Default: 2 kolom. Di desktop: 4 kolom. */
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
+            gap: 25px;
+            padding: 10px;
+            opacity: 0;
+            transition: opacity 1s ease-in-out;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        #gallery-container.loaded {
+            opacity: 1;
+        }
+        
+        /* Media Query untuk 4 kolom di layar lebar */
+        @media (min-width: 992px) {
+            #gallery-container {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+        @media (max-width: 576px) {
+            #gallery-container {
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                gap: 15px;
+            }
+        }
+
+
+        /* KOMIK CARD - MODERN STYLE */
+        .komik-card {
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 5px 15px var(--shadow-light);
+            overflow: hidden;
+            cursor: pointer;
+            text-align: left;
+            text-decoration: none;
+            color: inherit;
+            
+            /* Animasi Smooth */
+            transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), box-shadow 0.3s ease, opacity 0.5s;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        
+        /* Animasi saat kartu muncul */
+        .komik-card.loaded-item {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .komik-card:hover {
+            transform: translateY(-5px) scale(1.02);
+            box-shadow: 0 10px 30px var(--shadow-medium);
+        }
+
+        /* THUMBNAIL */
+        .card-thumbnail-wrapper {
+            position: relative;
+            width: 100%;
+            /* Aspek rasio umum untuk cover komik (mis. 3:4) */
+            padding-top: 133.33%; 
+            overflow: hidden;
+        }
+
+        .card-thumbnail-wrapper img {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.3s ease;
+            filter: brightness(0.95);
+        }
+
+        .komik-card:hover img {
+            transform: scale(1.05);
+            filter: brightness(1);
+        }
+        
+        /* TYPE BADGE (Manhwa/Manhua/Manga) */
+        .type-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: var(--primary-color);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.7em;
+            font-weight: bold;
+            z-index: 10;
+        }
+
+        /* CONTENT/METADATA */
+        .card-content {
+            padding: 10px 15px 15px;
+        }
+
+        .card-content h3 {
+            margin: 0 0 5px 0;
+            font-size: 1.1em;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: #1a1a1a;
+        }
+
+        .chapter-info {
+            font-size: 0.9em;
+            color: #555;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .chapter-info span.chapter-text {
+            font-weight: 600;
+            color: #007bff; /* Warna biru untuk chapter */
+        }
+        
+        .message {
+            grid-column: 1 / -1;
+            padding: 50px;
+            font-size: 1.2em;
+            color: #777;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header-container">
+        <h1>🔥 Daftar Komik Paling Populer</h1>
+        <p>Data diambil dari NekoLabs API.</p>
+    </div>
+    
+    <div id="loading-spinner">
+        <div class="spinner"></div>
+    </div>
+
+    <div id="gallery-container">
+        </div>
+
+    <script>
+        const galleryContainer = document.getElementById('gallery-container');
+        const spinner = document.getElementById('loading-spinner');
+        const API_URL = 'https://api.nekolabs.web.id/discovery/komikindo/v2/popular';
+
+        /**
+         * Fungsi untuk menampilkan spinner
+         */
+        function showLoading() {
+            spinner.style.display = 'block';
+            galleryContainer.classList.remove('loaded');
+            galleryContainer.innerHTML = ''; // Bersihkan kontainer sebelumnya
+        }
+
+        /**
+         * Fungsi untuk menyembunyikan spinner
+         */
+        function hideLoading() {
+            spinner.style.display = 'none';
+            galleryContainer.classList.add('loaded');
+        }
+
+        /**
+         * Fungsi utama untuk mengambil data dan menampilkan galeri
+         */
+        async function fetchAndDisplayPopularKomik() {
+            showLoading();
+
+            try {
+                // Mengambil data dari API
+                const response = await fetch(API_URL);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+
+                if (data.success && data.result && data.result.length > 0) {
+                    
+                    // Iterasi melalui setiap hasil komik
+                    data.result.forEach((item, index) => {
+                        // Membuat elemen kartu baru (menggunakan <a> agar bisa diklik)
+                        const card = document.createElement('a');
+                        card.href = item.url; // Link ke halaman manga/manhwa
+                        card.target = '_blank';
+                        card.className = 'komik-card';
+                        
+                        // Menangani data yang mungkin kosong
+                        const title = item.title || 'Judul Tidak Diketahui';
+                        const type = item.type || 'Komik';
+                        const latestChapter = item.data && item.data.chapter ? item.data.chapter : 'N/A';
+                        const lastUpdated = item.data && item.data.time ? item.data.time : 'Tidak diketahui';
+                        const imageUrl = item.img || 'placeholder.jpg'; // Gunakan placeholder jika API tidak menyediakan gambar
+
+                        // Menambahkan konten HTML ke kartu
+                        card.innerHTML = `
+                            <div class="card-thumbnail-wrapper">
+                                <span class="type-badge">${type}</span>
+                                <img src="${imageUrl}" alt="${title} Cover" loading="lazy">
+                            </div>
+                            <div class="card-content">
+                                <h3>${title}</h3>
+                                <div class="chapter-info">
+                                    <p>Chapter: <span class="chapter-text">${latestChapter}</span></p>
+                                    <small title="Terakhir diperbarui">${lastUpdated}</small>
+                                </div>
+                            </div>
+                        `;
+
+                        // Tambahkan kartu ke kontainer utama
+                        galleryContainer.appendChild(card);
+
+                        // Animasi smooth: Tunda tampilan setiap kartu agar muncul berurutan (staggered effect)
+                        setTimeout(() => {
+                            card.classList.add('loaded-item');
+                        }, index * 80); // Penundaan 80ms per item
+                    });
+
+                } else {
+                    // Tampilkan pesan jika tidak ada hasil
+                    galleryContainer.innerHTML = '<p class="message">😔 Tidak ada komik populer ditemukan saat ini.</p>';
+                }
+
+            } catch (error) {
+                // Tangani error (misalnya: gagal koneksi, CORS, API down)
+                console.error('Terjadi kesalahan saat mengambil data:', error);
+                galleryContainer.innerHTML = `<p class="message" style="color: red;">❌ Gagal memuat data. Error: ${error.message}.</p>`;
+            } finally {
+                // Sembunyikan loading setelah semua selesai
+                hideLoading();
+            }
+        }
+
+        // Panggil fungsi utama saat halaman selesai dimuat
+        document.addEventListener('DOMContentLoaded', fetchAndDisplayPopularKomik);
+    </script>
+
+</body>
+</html>
